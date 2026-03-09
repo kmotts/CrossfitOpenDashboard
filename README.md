@@ -52,3 +52,4 @@ Solution: a **Cloudflare Worker** proxy — free for 100k requests/day, ~3 min s
 ---
 
 *Not affiliated with CrossFit, Inc.*
+"# CrossfitOpenDashboard" 
