@@ -446,30 +446,66 @@ function genData(year,n=700){
 // ============================================================
 // LOAD
 // ============================================================
-async function loadData(year,scaled){
+function fetchWithTimeout(url, ms=8000){
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), ms);
+  return fetch(url, {signal: controller.signal}).finally(()=>clearTimeout(timer));
+}
+
+async function fetchPage(year, div, page, scaled){
+  const t=`${CF_API}/${year}/leaderboards?view=0&division=${div}&region=0&scaled=${scaled}&sort=0&page=${page}`;
+  const url=`${WORKER_URL}/proxy?url=${encodeURIComponent(t)}`;
+  const res = await fetchWithTimeout(url, 8000);
+  if(!res.ok) throw new Error(`HTTP ${res.status}`);
+  const d = await res.json();
+  return d.leaderboardRows || [];
+}
+
+async function loadData(year, scaled){
   setStatus('loading','Connecting…');
   setLoad(true,'Fetching leaderboard…');
   try{
-    if(!WORKER_URL) throw new Error('no worker');
-    const rows=[];
-    for(const div of['1','2']){
-      for(let p=1;p<=4;p++){
-        const t=`${CF_API}/${year}/leaderboards?view=0&division=${div}&region=0&scaled=${scaled}&sort=0&page=${p}`;
-        const res=await fetch(`${WORKER_URL}/proxy?url=${encodeURIComponent(t)}`);
-        if(!res.ok) throw new Error(`HTTP ${res.status}`);
-        const d=await res.json();
-        if(d.leaderboardRows?.length) rows.push(...d.leaderboardRows);
+    if(!WORKER_URL) throw new Error('no worker URL configured');
+
+    // First, test the worker is reachable with a quick health check
+    setLoad(true, 'Testing connection…');
+    const healthRes = await fetchWithTimeout(`${WORKER_URL}/health`, 5000);
+    if(!healthRes.ok) throw new Error('Worker not reachable');
+
+    setLoad(true, 'Fetching leaderboard data…');
+
+    // Fetch all pages in parallel for speed
+    const tasks = [];
+    for(const div of ['1','2']){
+      for(let p=1; p<=4; p++){
+        tasks.push(fetchPage(year, div, p, scaled).catch(()=>[]));
       }
     }
-    all=rows.map(parseRow).filter(a=>a.score>0);
+    const results = await Promise.all(tasks);
+    const rows = results.flat();
+
+    if(rows.length === 0){
+      throw new Error(`No data returned for ${year} Open — season may be inactive`);
+    }
+
+    all = rows.map(parseRow).filter(a=>a.score>0);
+    if(all.length === 0) throw new Error('All rows had zero scores');
+
     all.sort((a,b)=>b.score-a.score).forEach((a,i)=>a.rank=i+1);
-    setStatus('live',`Live · ${year}`);
+    setStatus('live', `Live · ${year}`);
     document.getElementById('notice').classList.remove('show');
+    console.log(`✅ Loaded ${all.length} athletes from CrossFit API`);
+
   }catch(e){
-    console.warn('API fallback:',e.message);
-    all=genData(parseInt(year),700);
+    console.warn('⚠️ API unavailable, using sample data:', e.message);
+    all = genData(parseInt(year), 700);
     setStatus('error','Sample Data');
-    document.getElementById('notice').classList.add('show');
+    // Update notice to show the real reason
+    const notice = document.getElementById('notice');
+    notice.querySelector('span:last-child').innerHTML =
+      `Could not load live data (<em>${e.message}</em>). Showing <strong>realistic sample data</strong> instead.
+       To enable live data, make sure your Worker URL is set correctly in <code>index.html</code>. See <strong>README.md</strong>.`;
+    notice.classList.add('show');
   }
   initScoreSlider();
   applyAll();
