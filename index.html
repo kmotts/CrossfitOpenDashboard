@@ -401,7 +401,7 @@
 // CONFIG
 // Set WORKER_URL after deploying worker/index.js to Cloudflare
 // ============================================================
-const WORKER_URL = 'https://crossfit-proxy.kristen-matsumura.workers.dev/'; // e.g. 'https://crossfit-proxy.your-name.workers.dev'
+const WORKER_URL = ''; // e.g. 'https://crossfit-proxy.your-name.workers.dev'
 const CF_API = 'https://c3po.crossfit.com/api/competitions/v2/competitions/open';
 const PAGE_SIZE = 30;
 
@@ -446,67 +446,79 @@ function genData(year,n=700){
 // ============================================================
 // LOAD
 // ============================================================
-function fetchWithTimeout(url, ms=8000){
+function fetchWithTimeout(url, ms=6000){
   const controller = new AbortController();
   const timer = setTimeout(()=>controller.abort(), ms);
   return fetch(url, {signal: controller.signal}).finally(()=>clearTimeout(timer));
 }
 
-async function fetchPage(year, div, page, scaled){
-  const t=`${CF_API}/${year}/leaderboards?view=0&division=${div}&region=0&scaled=${scaled}&sort=0&page=${page}`;
-  const url=`${WORKER_URL}/proxy?url=${encodeURIComponent(t)}`;
-  const res = await fetchWithTimeout(url, 8000);
-  if(!res.ok) throw new Error(`HTTP ${res.status}`);
-  const d = await res.json();
-  return d.leaderboardRows || [];
-}
-
 async function loadData(year, scaled){
   setStatus('loading','Connecting…');
   setLoad(true,'Fetching leaderboard…');
+
+  // If no worker configured, skip straight to sample data
+  if(!WORKER_URL){
+    console.log('No WORKER_URL set — using sample data');
+    useSampleData(year, 'No Worker URL configured in index.html');
+    return;
+  }
+
   try{
-    if(!WORKER_URL) throw new Error('no worker URL configured');
+    // Fetch men + women page 1 first to verify API is working
+    setLoad(true, 'Connecting to CrossFit API…');
+    const testUrl = `${CF_API}/${year}/leaderboards?view=0&division=1&region=0&scaled=${scaled}&sort=0&page=1`;
+    const testRes = await fetchWithTimeout(`${WORKER_URL}/proxy?url=${encodeURIComponent(testUrl)}`, 6000);
 
-    // First, test the worker is reachable with a quick health check
-    setLoad(true, 'Testing connection…');
-    const healthRes = await fetchWithTimeout(`${WORKER_URL}/health`, 5000);
-    if(!healthRes.ok) throw new Error('Worker not reachable');
+    if(!testRes.ok) throw new Error(`Worker returned HTTP ${testRes.status}`);
+    const testData = await testRes.json();
+    if(testData.error) throw new Error(`API error: ${testData.error}`);
 
-    setLoad(true, 'Fetching leaderboard data…');
+    setLoad(true, 'Loading leaderboard data…');
 
-    // Fetch all pages in parallel for speed
+    // Now fetch all pages in parallel
     const tasks = [];
     for(const div of ['1','2']){
       for(let p=1; p<=4; p++){
-        tasks.push(fetchPage(year, div, p, scaled).catch(()=>[]));
+        const t=`${CF_API}/${year}/leaderboards?view=0&division=${div}&region=0&scaled=${scaled}&sort=0&page=${p}`;
+        const u=`${WORKER_URL}/proxy?url=${encodeURIComponent(t)}`;
+        tasks.push(
+          fetchWithTimeout(u, 6000)
+            .then(r=>r.json())
+            .then(d=>d.leaderboardRows||[])
+            .catch(e=>{ console.warn('Page fetch failed:', e.message); return []; })
+        );
       }
     }
+
     const results = await Promise.all(tasks);
     const rows = results.flat();
 
-    if(rows.length === 0){
-      throw new Error(`No data returned for ${year} Open — season may be inactive`);
-    }
+    if(rows.length === 0) throw new Error(`No athletes found for ${year} — try a different year`);
 
     all = rows.map(parseRow).filter(a=>a.score>0);
-    if(all.length === 0) throw new Error('All rows had zero scores');
+    if(all.length === 0) throw new Error('No valid scores found in API response');
 
     all.sort((a,b)=>b.score-a.score).forEach((a,i)=>a.rank=i+1);
     setStatus('live', `Live · ${year}`);
     document.getElementById('notice').classList.remove('show');
-    console.log(`✅ Loaded ${all.length} athletes from CrossFit API`);
+    console.log(`✅ Loaded ${all.length} live athletes`);
 
   }catch(e){
-    console.warn('⚠️ API unavailable, using sample data:', e.message);
-    all = genData(parseInt(year), 700);
-    setStatus('error','Sample Data');
-    // Update notice to show the real reason
-    const notice = document.getElementById('notice');
-    notice.querySelector('span:last-child').innerHTML =
-      `Could not load live data (<em>${e.message}</em>). Showing <strong>realistic sample data</strong> instead.
-       To enable live data, make sure your Worker URL is set correctly in <code>index.html</code>. See <strong>README.md</strong>.`;
-    notice.classList.add('show');
+    console.warn('⚠️ API error:', e.message);
+    useSampleData(year, e.message);
   }
+
+  initScoreSlider();
+  applyAll();
+  setLoad(false);
+}
+
+function useSampleData(year, reason){
+  all = genData(parseInt(year), 700);
+  setStatus('error','Sample Data');
+  const notice = document.getElementById('notice');
+  notice.innerHTML = `<span>⚠</span><span>Could not load live CrossFit data: <em>${reason}</em>. Showing <strong>realistic sample data</strong>. Make sure your Cloudflare Worker is deployed and <code>WORKER_URL</code> is set in <code>index.html</code>. See <strong>README.md</strong>.</span>`;
+  notice.classList.add('show');
   initScoreSlider();
   applyAll();
   setLoad(false);
@@ -590,14 +602,14 @@ function cmFtIn(cm){const t=Math.round(cm/2.54);return `${Math.floor(t/12)}'${t%
 function kgLbs(kg){return Math.round(kg*2.205);}
 
 function updRUI(pre,mn,mx,lo,hi,fmt){
-  const track=document.getElementById(`${pre}Track`);
   const fill=document.getElementById(`${pre}Fill`);
   const lbl=document.getElementById(`${pre}Lbl`);
-  if(!track||!fill||!lbl)return;
+  if(!fill||!lbl)return;
   const pct=v=>((v-mn)/(mx-mn))*100;
   fill.style.left=pct(lo)+'%';
   fill.style.width=(pct(hi)-pct(lo))+'%';
-  lbl.querySelector('span').textContent=`${fmt(lo)} – ${fmt(hi)}`;
+  const spanEl=lbl.querySelector('span')||lbl;
+  spanEl.textContent=`${fmt(lo)} – ${fmt(hi)}`;
 }
 function updAllRUI(){
   updRUI('age',18,65,F.ageMin,F.ageMax,v=>v);
