@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CrossFit Open Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@300;400;600;700&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+  <style>
+    :root {
+      --black:#090909; --dark:#111; --card:#181818; --card2:#1e1e1e;
+      --border:#272727; --border2:#333; --red:#e63128; --red-dim:#7a1a16;
+      --white:#eeebe4; --muted:#777; --muted2:#555;
+      --men:#4a9eff; --women:#ff6b9d; --hl:#f5c518;
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html{scroll-behavior:smooth}
+    body{background:var(--black);color:var(--white);font-family:'Barlow',sans-serif;font-size:14px;min-height:100vh}
+
+    /* HEADER */
+    header{background:var(--dark);border-bottom:3px solid var(--red);padding:0 1.5rem;display:flex;align-items:center;justify-content:space-between;height:64px;position:sticky;top:0;z-index:200}
+    .logo{display:flex;align-items:baseline;gap:.5rem}
+    .logo-cf{font-family:'Bebas Neue',sans-serif;font-size:1.9rem;color:var(--red);letter-spacing:2px}
+    .logo-open{font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:600;letter-spacing:4px;text-transform:uppercase;color:var(--muted)}
+    .hdr-r{display:flex;align-items:center;gap:.85rem}
+    .api-status{display:flex;align-items:center;gap:.4rem;font-family:'Barlow Condensed',sans-serif;font-size:.7rem;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+    .sdot{width:7px;height:7px;border-radius:50%;background:#4caf50;box-shadow:0 0 6px #4caf5066;animation:pulse 2s infinite}
+    .sdot.loading{background:#ffc107;box-shadow:0 0 6px #ffc10766}
+    .sdot.error{background:var(--red);box-shadow:none;animation:none}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+    select.ctrl{background:transparent;border:1px solid var(--border);color:var(--white);font-family:'Barlow Condensed',sans-serif;font-size:.83rem;font-weight:600;letter-spacing:1px;padding:.32rem .7rem;cursor:pointer;border-radius:2px}
+    select.ctrl:focus{outline:none;border-color:var(--red)}
+    select.ctrl option{background:var(--dark)}
+
+    /* LAYOUT */
+    .layout{display:flex;height:calc(100vh - 64px)}
+
+    /* SIDEBAR */
+    aside{width:268px;min-width:268px;background:var(--dark);border-right:1px solid var(--border);overflow-y:auto;padding:1.1rem .9rem;display:flex;flex-direction:column;gap:1.1rem}
+    aside::-webkit-scrollbar{width:3px}
+    aside::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+    .sb-sec{display:flex;flex-direction:column;gap:.65rem}
+    .sb-title{font-family:'Barlow Condensed',sans-serif;font-size:.67rem;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--muted2);padding-bottom:.45rem;border-bottom:1px solid var(--border)}
+
+    /* Lookup */
+    .lk-wrap{position:relative}
+    .lk-input{width:100%;background:var(--card);border:1px solid var(--border);color:var(--white);font-family:'Barlow',sans-serif;font-size:.83rem;padding:.48rem 1.8rem .48rem .7rem;border-radius:2px;transition:border-color .15s}
+    .lk-input:focus{outline:none;border-color:var(--red)}
+    .lk-input::placeholder{color:var(--muted)}
+    .lk-clear{position:absolute;right:.45rem;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:1.1rem;display:none;line-height:1}
+    .lk-clear.vis{display:block}
+    .ac-list{position:absolute;top:100%;left:0;right:0;z-index:400;background:var(--card2);border:1px solid var(--border2);border-top:none;border-radius:0 0 3px 3px;max-height:190px;overflow-y:auto;display:none}
+    .ac-list.open{display:block}
+    .ac-item{padding:.45rem .7rem;cursor:pointer;font-size:.8rem;border-bottom:1px solid var(--border);transition:background .1s}
+    .ac-item:last-child{border-bottom:none}
+    .ac-item:hover,.ac-item.act{background:var(--red-dim)}
+    .ac-name{font-weight:500}
+    .ac-meta{color:var(--muted);font-size:.72rem}
+    .sac{background:#15110a;border:1px solid #5a3d00;border-radius:3px;padding:.7rem;display:none}
+    .sac.vis{display:block}
+    .sac-name{font-family:'Barlow Condensed',sans-serif;font-size:.95rem;font-weight:700;color:var(--hl);letter-spacing:1px}
+    .sac-stats{margin-top:.3rem;font-size:.76rem;color:var(--muted);line-height:1.75}
+    .sac-stats strong{color:var(--white)}
+
+    /* Range sliders */
+    .rg-group{display:flex;flex-direction:column;gap:.3rem}
+    .rg-lbl{display:flex;justify-content:space-between;font-family:'Barlow Condensed',sans-serif;font-size:.72rem;letter-spacing:1px;color:var(--muted)}
+    .rg-lbl span{color:var(--white);font-weight:600}
+    .rg-track{position:relative;height:22px;display:flex;align-items:center}
+    .rg-bg{position:absolute;height:3px;background:var(--border2);border-radius:2px;left:0;right:0}
+    .rg-fill{position:absolute;height:3px;background:var(--red);border-radius:2px;pointer-events:none}
+    input[type=range].dual{position:absolute;width:100%;-webkit-appearance:none;appearance:none;background:transparent;pointer-events:none}
+    input[type=range].dual::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--white);border:2px solid var(--red);cursor:pointer;pointer-events:all;box-shadow:0 0 0 3px rgba(230,49,40,.12);transition:box-shadow .15s}
+    input[type=range].dual::-webkit-slider-thumb:hover{box-shadow:0 0 0 5px rgba(230,49,40,.22)}
+    input[type=range].dual::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:var(--white);border:2px solid var(--red);cursor:pointer}
+
+    /* Gender toggle */
+    .g-tog{display:flex;gap:.4rem}
+    .g-btn{flex:1;font-family:'Barlow Condensed',sans-serif;font-size:.72rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:.42rem 0;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;border-radius:2px;transition:all .15s;text-align:center}
+    .g-btn:hover{border-color:var(--white);color:var(--white)}
+    .g-btn.am{background:#4a9eff18;border-color:var(--men);color:var(--men)}
+    .g-btn.af{background:#ff6b9d18;border-color:var(--women);color:var(--women)}
+    .g-btn.aa{background:var(--red-dim);border-color:var(--red);color:var(--white)}
+
+    .reset-btn{width:100%;font-family:'Barlow Condensed',sans-serif;font-size:.72rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:.5rem;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;border-radius:2px;transition:all .15s}
+    .reset-btn:hover{border-color:var(--red);color:var(--red)}
+
+    /* MAIN */
+    .main-scroll{flex:1;overflow-y:auto;padding:1.1rem;display:flex;flex-direction:column;gap:1.1rem}
+    .main-scroll::-webkit-scrollbar{width:3px}
+    .main-scroll::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+    /* STATS */
+    .stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:.9rem}
+    .stat-card{background:var(--card);border:1px solid var(--border);padding:.9rem 1.1rem;border-radius:3px;position:relative;overflow:hidden}
+    .stat-card::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--red)}
+    .stat-lbl{font-family:'Barlow Condensed',sans-serif;font-size:.66rem;letter-spacing:3px;text-transform:uppercase;color:var(--muted);margin-bottom:.3rem}
+    .stat-val{font-family:'Bebas Neue',sans-serif;font-size:2rem;letter-spacing:1px;line-height:1}
+    .stat-sub{font-size:.72rem;color:var(--muted);margin-top:.15rem}
+
+    /* PANELS */
+    .chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.1rem}
+    .panel{background:var(--card);border:1px solid var(--border);border-radius:3px;overflow:hidden}
+    .panel.full{grid-column:1/-1}
+    .ph{padding:.65rem 1.1rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.45rem}
+    .pt{font-family:'Barlow Condensed',sans-serif;font-size:.7rem;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--muted)}
+    .pb{padding:.9rem 1.1rem}
+    .btns{display:flex;gap:.35rem}
+    .btn{font-family:'Barlow Condensed',sans-serif;font-size:.7rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:.32rem .8rem;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;border-radius:2px;transition:all .15s}
+    .btn:hover{border-color:var(--white);color:var(--white)}
+    .btn.active{background:var(--red);border-color:var(--red);color:var(--white)}
+    .legend{display:flex;gap:.9rem;align-items:center}
+    .li{display:flex;align-items:center;gap:.32rem;font-family:'Barlow Condensed',sans-serif;font-size:.68rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted)}
+    .ld{width:8px;height:8px;border-radius:50%}
+    .ldm{width:8px;height:8px;transform:rotate(45deg)}
+
+    /* NOTICE */
+    .notice{background:#14110a;border:1px solid #4a3700;border-radius:3px;padding:.6rem .9rem;font-size:.78rem;color:#cc9933;display:none;align-items:flex-start;gap:.55rem;line-height:1.55}
+    .notice.show{display:flex}
+
+    /* TABLE */
+    .tc{display:flex;gap:.65rem;align-items:center;flex-wrap:wrap}
+    .fi{background:transparent;border:1px solid var(--border);color:var(--white);font-family:'Barlow',sans-serif;font-size:.8rem;padding:.32rem .7rem;border-radius:2px;width:190px}
+    .fi:focus{outline:none;border-color:var(--red)}
+    .fi::placeholder{color:var(--muted)}
+    .tw{overflow-x:auto;margin-top:.6rem}
+    table{width:100%;border-collapse:collapse;font-size:.82rem}
+    thead th{font-family:'Barlow Condensed',sans-serif;font-size:.66rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);padding:.5rem .7rem;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none}
+    thead th:hover{color:var(--white)}
+    thead th.sorted{color:var(--red)}
+    tbody tr{border-bottom:1px solid #1c1c1c;transition:background .1s}
+    tbody tr:hover{background:#1e1e1e}
+    tbody tr.hlrow{background:#16110a !important}
+    tbody td{padding:.55rem .7rem;font-weight:300}
+    .rk{font-family:'Bebas Neue',sans-serif;font-size:1rem;color:var(--muted);letter-spacing:1px}
+    .rk.top{color:var(--red)}.rk.hl{color:var(--hl)}
+    .aname{font-weight:500}
+    .bdg{display:inline-block;font-family:'Barlow Condensed',sans-serif;font-size:.66rem;font-weight:700;letter-spacing:2px;padding:2px 7px;border-radius:2px}
+    .bdg.M{background:#4a9eff14;color:var(--men);border:1px solid #4a9eff38}
+    .bdg.F{background:#ff6b9d14;color:var(--women);border:1px solid #ff6b9d38}
+    .sbw{display:flex;align-items:center;gap:.45rem}
+    .sb{height:3px;background:var(--red);border-radius:2px;min-width:3px}
+    .sb.hl{background:var(--hl)}
+    .pag{display:flex;align-items:center;justify-content:space-between;padding:.65rem 1.1rem;border-top:1px solid var(--border);font-size:.73rem;color:var(--muted)}
+    .pbs{display:flex;gap:.35rem}
+    .pb-btn{font-family:'Barlow Condensed',sans-serif;font-size:.73rem;font-weight:700;letter-spacing:1px;padding:.26rem .6rem;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;border-radius:2px;transition:all .15s}
+    .pb-btn:hover:not(:disabled){border-color:var(--white);color:var(--white)}
+    .pb-btn:disabled{opacity:.28;cursor:default}
+    .pb-btn.cur{background:var(--red);border-color:var(--red);color:var(--white)}
+
+    /* LOADING */
+    .lov{display:none;position:fixed;inset:0;background:#090909cc;z-index:600;align-items:center;justify-content:center;flex-direction:column;gap:1rem}
+    .lov.on{display:flex}
+    .spin{width:42px;height:42px;border:3px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:spin .7s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .ltext{font-family:'Barlow Condensed',sans-serif;font-size:.73rem;letter-spacing:3px;text-transform:uppercase;color:var(--muted)}
+
+    /* TOOLTIP */
+    .tip{position:fixed;background:#1d1d1d;border:1px solid var(--border2);border-radius:3px;padding:.5rem .8rem;font-size:.76rem;pointer-events:none;z-index:500;display:none;max-width:230px;line-height:1.72}
+    .tip.vis{display:block}
+    .tip strong{color:var(--white);font-weight:600}
+    .tip span{color:var(--muted)}
+
+    /* D3 */
+    .axis text{fill:var(--muted);font-family:'Barlow Condensed',sans-serif;font-size:9.5px}
+    .axis line,.axis path{stroke:var(--border2)}
+    .grid line{stroke:var(--border);stroke-opacity:.55}
+    .grid path{display:none}
+    .bar-m{fill:var(--men);fill-opacity:.72;cursor:pointer;transition:fill-opacity .1s}
+    .bar-f{fill:var(--women);fill-opacity:.72;cursor:pointer;transition:fill-opacity .1s}
+    .bar-m:hover,.bar-f:hover{fill-opacity:1}
+    .dot-m{fill:var(--men);fill-opacity:.45;cursor:pointer}
+    .dot-f{fill:var(--women);fill-opacity:.45;cursor:pointer}
+    .dot-m:hover,.dot-f:hover{fill-opacity:1}
+    .dot-hl{fill:var(--hl);fill-opacity:1;stroke:#090909;stroke-width:1.5;cursor:pointer}
+    .axlbl{fill:#4a4a4a;font-family:'Barlow Condensed',sans-serif;font-size:9.5px;letter-spacing:2px}
+    .hlline{stroke:var(--hl);stroke-width:2;stroke-dasharray:5,3;fill:none;pointer-events:none}
+
+    /* Responsive */
+    @media(max-width:1100px){.chart-grid{grid-template-columns:1fr}.stats-row{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:680px){aside{display:none}.stats-row{grid-template-columns:1fr 1fr}}
+    .empty{text-align:center;padding:2.5rem;color:var(--muted);font-family:'Barlow Condensed',sans-serif;letter-spacing:2px;text-transform:uppercase;font-size:.8rem}
+  </style>
+</head>
+<body>
+
+<div class="lov" id="lov"><div class="spin"></div><div class="ltext" id="ltxt">Loading…</div></div>
+<div class="tip" id="tip"></div>
+
+<header>
+  <div class="logo">
+    <span class="logo-cf">CrossFit</span>
+    <span class="logo-open">Open Dashboard</span>
+  </div>
+  <div class="hdr-r">
+    <div class="api-status"><div class="sdot loading" id="sdot"></div><span id="stxt">Connecting</span></div>
+    <select class="ctrl" id="yrSel">
+      <option value="2025">2025 Open</option>
+      <option value="2024">2024 Open</option>
+      <option value="2023">2023 Open</option>
+      <option value="2022">2022 Open</option>
+    </select>
+    <select class="ctrl" id="scSel">
+      <option value="0">Rx</option>
+      <option value="1">Scaled</option>
+      <option value="2">Foundations</option>
+    </select>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- SIDEBAR -->
+  <aside>
+
+    <div class="sb-sec">
+      <div class="sb-title">Athlete Lookup</div>
+      <div class="lk-wrap">
+        <input class="lk-input" id="lkIn" type="text" placeholder="Search your name…" autocomplete="off" spellcheck="false" />
+        <button class="lk-clear" id="lkClr">×</button>
+        <div class="ac-list" id="acList"></div>
+      </div>
+      <div class="sac" id="sacCard">
+        <div class="sac-name" id="sacName"></div>
+        <div class="sac-stats" id="sacStats"></div>
+      </div>
+    </div>
+
+    <div class="sb-sec">
+      <div class="sb-title">Gender</div>
+      <div class="g-tog">
+        <button class="g-btn aa" id="gAll"   onclick="setGender('all')">All</button>
+        <button class="g-btn"    id="gMen"   onclick="setGender('M')">Men</button>
+        <button class="g-btn"    id="gWomen" onclick="setGender('F')">Women</button>
+      </div>
+    </div>
+
+    <div class="sb-sec">
+      <div class="sb-title">Age Range</div>
+      <div class="rg-group">
+        <div class="rg-lbl">Age <span id="ageLbl">18 – 65</span></div>
+        <div class="rg-track" id="ageTrack">
+          <div class="rg-bg"></div><div class="rg-fill" id="ageFill"></div>
+          <input type="range" class="dual" id="ageMin" min="18" max="65" value="18" />
+          <input type="range" class="dual" id="ageMax" min="18" max="65" value="65" />
+        </div>
+      </div>
+    </div>
+
+    <div class="sb-sec">
+      <div class="sb-title">Height Range</div>
+      <div class="rg-group">
+        <div class="rg-lbl">Height <span id="htLbl">4'8" – 7'0"</span></div>
+        <div class="rg-track" id="htTrack">
+          <div class="rg-bg"></div><div class="rg-fill" id="htFill"></div>
+          <input type="range" class="dual" id="htMin" min="142" max="213" value="142" />
+          <input type="range" class="dual" id="htMax" min="142" max="213" value="213" />
+        </div>
+      </div>
+    </div>
+
+    <div class="sb-sec">
+      <div class="sb-title">Weight Range</div>
+      <div class="rg-group">
+        <div class="rg-lbl">Weight <span id="wtLbl">88 – 286 lbs</span></div>
+        <div class="rg-track" id="wtTrack">
+          <div class="rg-bg"></div><div class="rg-fill" id="wtFill"></div>
+          <input type="range" class="dual" id="wtMin" min="40" max="130" value="40" />
+          <input type="range" class="dual" id="wtMax" min="40" max="130" value="130" />
+        </div>
+      </div>
+    </div>
+
+    <div class="sb-sec">
+      <div class="sb-title">Score Range</div>
+      <div class="rg-group">
+        <div class="rg-lbl">Score <span id="scLbl">—</span></div>
+        <div class="rg-track" id="scTrack">
+          <div class="rg-bg"></div><div class="rg-fill" id="scFill"></div>
+          <input type="range" class="dual" id="scMin" min="0" max="999" value="0" />
+          <input type="range" class="dual" id="scMax" min="0" max="999" value="999" />
+        </div>
+      </div>
+    </div>
+
+    <div class="sb-sec">
+      <button class="reset-btn" onclick="resetAll()">↺  Reset All Filters</button>
+    </div>
+
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main-scroll">
+
+    <div class="notice" id="notice">
+      <span>⚠</span>
+      <span>The CrossFit API blocks direct browser requests (CORS restriction). Displaying <strong>realistic sample data</strong>.
+      To enable live data, deploy <code>worker/index.js</code> to Cloudflare Workers (free tier) and paste your Worker URL as <code>WORKER_URL</code> at the top of this file. Full instructions in <strong>README.md</strong>.</span>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-lbl">Showing</div><div class="stat-val" id="stFiltered">—</div><div class="stat-sub" id="stFilteredSub"></div></div>
+      <div class="stat-card"><div class="stat-lbl">Men</div><div class="stat-val" style="color:var(--men)" id="stMen">—</div><div class="stat-sub" id="stMenPct"></div></div>
+      <div class="stat-card"><div class="stat-lbl">Women</div><div class="stat-val" style="color:var(--women)" id="stWomen">—</div><div class="stat-sub" id="stWomenPct"></div></div>
+      <div class="stat-card"><div class="stat-lbl">Avg Score</div><div class="stat-val" id="stAvg">—</div><div class="stat-sub">filtered avg</div></div>
+    </div>
+
+    <div class="chart-grid">
+
+      <!-- Histogram -->
+      <div class="panel">
+        <div class="ph">
+          <span class="pt">Score Distribution</span>
+          <div style="display:flex;gap:.65rem;align-items:center;flex-wrap:wrap">
+            <div class="legend">
+              <div class="li"><div class="ld" style="background:var(--men)"></div>Men</div>
+              <div class="li"><div class="ld" style="background:var(--women)"></div>Women</div>
+              <div class="li" id="hlLegH" style="display:none"><div class="ldm" style="background:var(--hl)"></div><span style="color:var(--hl)" id="hlLegHName">You</span></div>
+            </div>
+            <div class="btns">
+              <button class="btn active" id="btnOvl" onclick="setHistMode('overlay')">Overlay</button>
+              <button class="btn"        id="btnSide" onclick="setHistMode('side')">Side by Side</button>
+            </div>
+          </div>
+        </div>
+        <div class="pb"><svg id="histSvg" style="width:100%"></svg></div>
+      </div>
+
+      <!-- Age Scatter -->
+      <div class="panel">
+        <div class="ph">
+          <span class="pt">Score vs Age</span>
+          <div class="legend">
+            <div class="li"><div class="ld" style="background:var(--men)"></div>Men</div>
+            <div class="li"><div class="ld" style="background:var(--women)"></div>Women</div>
+            <div class="li" id="hlLegA" style="display:none"><div class="ldm" style="background:var(--hl)"></div><span style="color:var(--hl)">You</span></div>
+          </div>
+        </div>
+        <div class="pb"><svg id="ageSvg" style="width:100%"></svg></div>
+      </div>
+
+      <!-- HW Scatter - full width -->
+      <div class="panel full">
+        <div class="ph">
+          <span class="pt">Score vs Physical Attributes</span>
+          <div style="display:flex;gap:.65rem;align-items:center;flex-wrap:wrap">
+            <div class="legend">
+              <div class="li"><div class="ld" style="background:var(--men)"></div>Men</div>
+              <div class="li"><div class="ld" style="background:var(--women)"></div>Women</div>
+              <div class="li" id="hlLegHW" style="display:none"><div class="ldm" style="background:var(--hl)"></div><span style="color:var(--hl)">You</span></div>
+            </div>
+            <div class="btns">
+              <button class="btn active" id="btnH" onclick="setHWMode('height')">Height</button>
+              <button class="btn"        id="btnW" onclick="setHWMode('weight')">Weight</button>
+            </div>
+          </div>
+        </div>
+        <div class="pb"><svg id="hwSvg" style="width:100%"></svg></div>
+      </div>
+
+    </div>
+
+    <!-- Table -->
+    <div class="panel">
+      <div class="ph">
+        <span class="pt">Leaderboard</span>
+        <div class="tc">
+          <input class="fi" id="tblSearch" placeholder="Search athlete…" oninput="tblFilter()" />
+          <select class="ctrl" id="tblSortF" onchange="tblSort()">
+            <option value="rank">Rank</option><option value="score">Score</option>
+            <option value="age">Age</option><option value="height">Height</option><option value="weight">Weight</option>
+          </select>
+          <select class="ctrl" id="tblSortD" onchange="tblSort()">
+            <option value="asc">↑ Asc</option><option value="desc">↓ Desc</option>
+          </select>
+        </div>
+      </div>
+      <div class="tw">
+        <table>
+          <thead><tr>
+            <th onclick="clickSort('rank')"   id="th-rank">Rank <span class="sa">↕</span></th>
+            <th onclick="clickSort('name')"   id="th-name">Athlete <span class="sa"></span></th>
+            <th onclick="clickSort('gender')" id="th-gender">Gender <span class="sa"></span></th>
+            <th onclick="clickSort('age')"    id="th-age">Age <span class="sa"></span></th>
+            <th onclick="clickSort('height')" id="th-height">Height <span class="sa"></span></th>
+            <th onclick="clickSort('weight')" id="th-weight">Weight <span class="sa"></span></th>
+            <th onclick="clickSort('score')"  id="th-score">Score <span class="sa"></span></th>
+            <th>Affiliate</th>
+          </tr></thead>
+          <tbody id="tblBody"></tbody>
+        </table>
+      </div>
+      <div class="pag"><span id="pgInfo"></span><div class="pbs" id="pgBtns"></div></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ============================================================
+// CONFIG
+// Set WORKER_URL after deploying worker/index.js to Cloudflare
+// ============================================================
+const WORKER_URL = ''; // e.g. 'https://crossfit-proxy.your-name.workers.dev'
+const CF_API = 'https://c3po.crossfit.com/api/competitions/v2/competitions/open';
+const PAGE_SIZE = 30;
+
+// ============================================================
+// STATE
+// ============================================================
+let all = [], visible = [], tbl = [];
+let page = 1, histMode = 'overlay', hwMode = 'height';
+let sortKey = 'rank', sortDir = 'asc', gFilter = 'all', selA = null;
+const F = { ageMin:18, ageMax:65, htMin:142, htMax:213, wtMin:40, wtMax:130, scMin:0, scMax:9999 };
+
+// ============================================================
+// SAMPLE DATA
+// ============================================================
+const FN = {
+  M:['James','Liam','Noah','Oliver','Elijah','William','Benjamin','Lucas','Henry','Alexander','Mason','Ethan','Daniel','Logan','Jackson','Sebastian','Jack','Aiden','Owen','Samuel','Matthew','Joseph','Levi','Mateo','David','John','Wyatt','Carter','Julian','Luke','Grayson','Isaac','Lincoln','Nathan','Caleb','Ryan','Tyler','Hunter','Adrian','Blake','Connor','Dylan','Evan','Finn','Grant','Hudson','Ian','Jace','Kyle','Leo'],
+  F:['Emma','Olivia','Ava','Charlotte','Sophia','Amelia','Isabella','Mia','Evelyn','Harper','Abigail','Emily','Elizabeth','Sofia','Madison','Avery','Ella','Scarlett','Grace','Chloe','Victoria','Riley','Aria','Lily','Aubrey','Zoey','Penelope','Layla','Nora','Leah','Hannah','Lillian','Addison','Ellie','Stella','Natalie','Zoe','Hazel','Violet','Aurora','Savannah','Audrey','Brooklyn','Bella','Claire','Skylar','Lucy','Paisley','Everly','Anna']
+};
+const LN=['Smith','Johnson','Williams','Brown','Jones','Garcia','Miller','Davis','Rodriguez','Martinez','Hernandez','Lopez','Wilson','Anderson','Thomas','Taylor','Moore','Jackson','Martin','Lee','Perez','Thompson','White','Harris','Sanchez','Clark','Ramirez','Lewis','Robinson','Walker','Young','Hall','Allen','King','Wright','Scott','Hill','Green','Baker','Adams','Nelson','Carter','Mitchell','Parker','Collins','Edwards','Stewart','Flores','Morris','Murphy','Cook','Rogers'];
+const AFF=['CrossFit Mayhem','CrossFit Invictus','CrossFit Inc.','CrossFit HQ','CrossFit South','CrossFit East','CrossFit North','CrossFit West','CrossFit Prime','CrossFit Central','CrossFit Unity','CrossFit Peak','CrossFit Forge','CrossFit Iron','CrossFit Apex','CrossFit Summit','CrossFit Ridge','CrossFit Base','CrossFit Altitude','CrossFit Core'];
+const CTRY=['United States','Canada','Australia','United Kingdom','Brazil','Norway','Sweden','Netherlands','Germany','France','New Zealand','Denmark','Finland','Iceland','Spain'];
+
+function rng(seed){let s=seed>>>0;return()=>{s=(Math.imul(1664525,s)+1013904223)>>>0;return s/0x100000000;}}
+function randn(r){const u=Math.max(1e-10,r()),v=r();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+
+function genData(year,n=700){
+  const r=rng(year*31337+7),raw=[];
+  for(let i=0;i<n;i++){
+    const g=r()<.52?'M':'F',m=g==='M';
+    const age=Math.min(65,Math.max(18,Math.round(27+Math.abs(randn(r))*8+r()*10)));
+    const hCm=Math.round((m?178:165)+randn(r)*(m?7:6));
+    const wKg=Math.round((m?88:65)+randn(r)*(m?10:8));
+    const score=Math.max(40,Math.round((m?350:280)-(age-28)*1.4+randn(r)*72));
+    const hIn=Math.round(hCm/2.54);
+    raw.push({name:`${FN[g][Math.floor(r()*FN[g].length)]} ${LN[Math.floor(r()*LN.length)]}`,gender:g,age,heightCm:hCm,heightDisplay:`${Math.floor(hIn/12)}'${hIn%12}"`,weightKg:wKg,weightDisplay:`${Math.round(wKg*2.205)} lbs`,score,affiliate:AFF[Math.floor(r()*AFF.length)],country:CTRY[Math.floor(r()*CTRY.length)]});
+  }
+  ['M','F'].forEach(g=>raw.filter(a=>a.gender===g).sort((a,b)=>b.score-a.score).forEach((a,i)=>a.gRank=i+1));
+  raw.sort((a,b)=>b.score-a.score).forEach((a,i)=>a.rank=i+1);
+  return raw;
+}
+
+// ============================================================
+// LOAD
+// ============================================================
+async function loadData(year,scaled){
+  setStatus('loading','Connecting…');
+  setLoad(true,'Fetching leaderboard…');
+  try{
+    if(!WORKER_URL) throw new Error('no worker');
+    const rows=[];
+    for(const div of['1','2']){
+      for(let p=1;p<=4;p++){
+        const t=`${CF_API}/${year}/leaderboards?view=0&division=${div}&region=0&scaled=${scaled}&sort=0&page=${p}`;
+        const res=await fetch(`${WORKER_URL}/proxy?url=${encodeURIComponent(t)}`);
+        if(!res.ok) throw new Error(`HTTP ${res.status}`);
+        const d=await res.json();
+        if(d.leaderboardRows?.length) rows.push(...d.leaderboardRows);
+      }
+    }
+    all=rows.map(parseRow).filter(a=>a.score>0);
+    all.sort((a,b)=>b.score-a.score).forEach((a,i)=>a.rank=i+1);
+    setStatus('live',`Live · ${year}`);
+    document.getElementById('notice').classList.remove('show');
+  }catch(e){
+    console.warn('API fallback:',e.message);
+    all=genData(parseInt(year),700);
+    setStatus('error','Sample Data');
+    document.getElementById('notice').classList.add('show');
+  }
+  initScoreSlider();
+  applyAll();
+  setLoad(false);
+}
+
+function parseRow(row){
+  const e=row.entrant||{};
+  const hIn=parseHt(e.height),wLbs=parseFloat(e.weight)||0;
+  return{rank:parseInt(row.overallRank)||0,gRank:parseInt(row.overallRank)||0,name:e.competitorName||`${e.firstName||''} ${e.lastName||''}`.trim(),gender:e.gender||'M',age:parseInt(e.age)||0,heightCm:Math.round(hIn*2.54),heightDisplay:e.height||'—',weightKg:Math.round(wLbs/2.205),weightDisplay:wLbs?`${wLbs} lbs`:'—',score:parseInt(row.overallScore)||0,affiliate:e.affiliateName||'—',country:e.countryOfOriginName||'—'};
+}
+function parseHt(h){if(!h)return 0;const m=h.match(/(\d+)'(\d+)/);return m?parseInt(m[1])*12+parseInt(m[2]):0;}
+
+function initScoreSlider(){
+  const scores=all.map(a=>a.score);
+  const mn=Math.min(...scores),mx=Math.max(...scores);
+  document.getElementById('scMin').min=document.getElementById('scMax').min=mn;
+  document.getElementById('scMin').max=document.getElementById('scMax').max=mx;
+  document.getElementById('scMin').value=mn;
+  document.getElementById('scMax').value=mx;
+  F.scMin=mn;F.scMax=mx;
+  updRUI('sc',mn,mx,mn,mx,v=>v.toLocaleString());
+}
+
+// ============================================================
+// FILTERS
+// ============================================================
+function applyAll(){
+  visible=all.filter(a=>{
+    if(gFilter!=='all'&&a.gender!==gFilter)return false;
+    if(a.age>0&&(a.age<F.ageMin||a.age>F.ageMax))return false;
+    if(a.heightCm>0&&(a.heightCm<F.htMin||a.heightCm>F.htMax))return false;
+    if(a.weightKg>0&&(a.weightKg<F.wtMin||a.weightKg>F.wtMax))return false;
+    if(a.score<F.scMin||a.score>F.scMax)return false;
+    return true;
+  });
+  tbl=[...visible];
+  page=1;
+  applyTblSearch();
+  updStats();
+  redraw();
+}
+
+function applyTblSearch(){
+  const q=document.getElementById('tblSearch').value.toLowerCase();
+  tbl=visible.filter(a=>!q||a.name.toLowerCase().includes(q));
+  page=1;
+  applyTblSort();
+}
+function tblFilter(){applyTblSearch();renderTbl();}
+function tblSort(){sortKey=document.getElementById('tblSortF').value;sortDir=document.getElementById('tblSortD').value;applyTblSort();renderTbl();}
+
+function setGender(g){
+  gFilter=g;
+  document.getElementById('gAll').className='g-btn'+(g==='all'?' aa':'');
+  document.getElementById('gMen').className='g-btn'+(g==='M'?' am':'');
+  document.getElementById('gWomen').className='g-btn'+(g==='F'?' af':'');
+  applyAll();
+}
+
+function resetAll(){
+  gFilter='all';
+  document.getElementById('gAll').className='g-btn aa';
+  document.getElementById('gMen').className='g-btn';
+  document.getElementById('gWomen').className='g-btn';
+  F.ageMin=18;F.ageMax=65;F.htMin=142;F.htMax=213;F.wtMin=40;F.wtMax=130;
+  document.getElementById('ageMin').value=18;document.getElementById('ageMax').value=65;
+  document.getElementById('htMin').value=142;document.getElementById('htMax').value=213;
+  document.getElementById('wtMin').value=40;document.getElementById('wtMax').value=130;
+  const mn=parseInt(document.getElementById('scMin').min)||0,mx=parseInt(document.getElementById('scMin').max)||999;
+  document.getElementById('scMin').value=mn;document.getElementById('scMax').value=mx;
+  F.scMin=mn;F.scMax=mx;
+  updAllRUI();
+  clearSel();
+  applyAll();
+}
+
+// ============================================================
+// RANGE UI
+// ============================================================
+function cmFtIn(cm){const t=Math.round(cm/2.54);return `${Math.floor(t/12)}'${t%12}"`;}
+function kgLbs(kg){return Math.round(kg*2.205);}
+
+function updRUI(pre,mn,mx,lo,hi,fmt){
+  const track=document.getElementById(`${pre}Track`);
+  const fill=document.getElementById(`${pre}Fill`);
+  const lbl=document.getElementById(`${pre}Lbl`);
+  if(!track||!fill||!lbl)return;
+  const pct=v=>((v-mn)/(mx-mn))*100;
+  fill.style.left=pct(lo)+'%';
+  fill.style.width=(pct(hi)-pct(lo))+'%';
+  lbl.querySelector('span').textContent=`${fmt(lo)} – ${fmt(hi)}`;
+}
+function updAllRUI(){
+  updRUI('age',18,65,F.ageMin,F.ageMax,v=>v);
+  updRUI('ht',142,213,F.htMin,F.htMax,cmFtIn);
+  updRUI('wt',40,130,F.wtMin,F.wtMax,v=>kgLbs(v)+' lbs');
+  const mn=parseInt(document.getElementById('scMin').min)||0,mx=parseInt(document.getElementById('scMin').max)||999;
+  updRUI('sc',mn,mx,F.scMin,F.scMax,v=>v.toLocaleString());
+}
+
+function bindSlider(pre,minId,maxId,fMinK,fMaxK,fmt,mn,mx){
+  const a=document.getElementById(minId),b=document.getElementById(maxId);
+  const upd=()=>{
+    let lo=parseInt(a.value),hi=parseInt(b.value);
+    if(lo>hi){[lo,hi]=[hi,lo];}
+    F[fMinK]=lo;F[fMaxK]=hi;
+    updRUI(pre,mn,mx,lo,hi,fmt);
+    applyAll();
+  };
+  a.addEventListener('input',upd);b.addEventListener('input',upd);
+}
+
+// ============================================================
+// STATS
+// ============================================================
+function updStats(){
+  const men=visible.filter(a=>a.gender==='M'),women=visible.filter(a=>a.gender==='F');
+  const tot=visible.length,allT=all.length;
+  const avg=tot?Math.round(visible.reduce((s,a)=>s+a.score,0)/tot):0;
+  document.getElementById('stFiltered').textContent=tot.toLocaleString();
+  document.getElementById('stFilteredSub').textContent=`of ${allT.toLocaleString()} total`;
+  document.getElementById('stMen').textContent=men.length.toLocaleString();
+  document.getElementById('stMenPct').textContent=tot?`${((men.length/tot)*100).toFixed(1)}% of shown`:'';
+  document.getElementById('stWomen').textContent=women.length.toLocaleString();
+  document.getElementById('stWomenPct').textContent=tot?`${((women.length/tot)*100).toFixed(1)}% of shown`:'';
+  document.getElementById('stAvg').textContent=avg.toLocaleString();
+}
+
+// ============================================================
+// CHART HELPERS
+// ============================================================
+const tipEl=document.getElementById('tip');
+const showTip=(ev,html)=>{tipEl.classList.add('vis');tipEl.innerHTML=html;mvTip(ev);};
+const mvTip=ev=>{tipEl.style.left=(ev.clientX+14)+'px';tipEl.style.top=(ev.clientY-22)+'px';};
+const hideTip=()=>tipEl.classList.remove('vis');
+
+function cBase(id,H){
+  const svg=d3.select(`#${id}`);svg.selectAll('*').remove();
+  const W=Math.max(200,(document.getElementById(id).parentElement.clientWidth||400)-20);
+  const m={top:16,right:16,bottom:44,left:50};
+  const w=W-m.left-m.right,h=H-m.top-m.bottom;
+  svg.attr('viewBox',`0 0 ${W} ${H}`);
+  return{svg,W,H,m,w,h,g:svg.append('g').attr('transform',`translate(${m.left},${m.top})`)};
+}
+function addGrid(g,ys,w){g.append('g').attr('class','grid').call(d3.axisLeft(ys).tickSize(-w).tickFormat('').ticks(5));}
+function addAxes(g,xs,ys,h,xl,yl){
+  g.append('g').attr('class','axis').attr('transform',`translate(0,${h})`).call(d3.axisBottom(xs).ticks(7));
+  g.append('g').attr('class','axis').call(d3.axisLeft(ys).ticks(5).tickFormat(d3.format(',d')));
+  g.append('text').attr('class','axlbl').attr('x',0).attr('y',h+38).attr('text-anchor','start').text(xl);
+  g.append('text').attr('class','axlbl').attr('transform','rotate(-90)').attr('x',-4).attr('y',-38).attr('text-anchor','end').text(yl);
+}
+
+// ============================================================
+// HISTOGRAM
+// ============================================================
+function setHistMode(m){histMode=m;document.getElementById('btnOvl').classList.toggle('active',m==='overlay');document.getElementById('btnSide').classList.toggle('active',m==='side');drawHist();}
+
+function drawHist(){
+  const{g,w,h}=cBase('histSvg',265);
+  const men=visible.filter(a=>a.gender==='M').map(a=>a.score);
+  const women=visible.filter(a=>a.gender==='F').map(a=>a.score);
+  if(!visible.length)return;
+  const xExt=d3.extent(all.map(a=>a.score));
+  const xs=d3.scaleLinear().domain([xExt[0]-5,xExt[1]+5]).range([0,w]);
+  const nB=26,thresh=d3.range(xExt[0],xExt[1],(xExt[1]-xExt[0])/nB);
+  const bg=d3.bin().domain(xs.domain()).thresholds(thresh);
+  const mB=bg(men),fB=bg(women);
+  const maxC=d3.max([...mB,...fB],d=>d.length)||1;
+  const ys=d3.scaleLinear().domain([0,maxC*1.12]).range([h,0]);
+  addGrid(g,ys,w);addAxes(g,xs,ys,h,'SCORE (REPS)','ATHLETES');
+  const drawBars=(bins,cls,offset,bw)=>
+    g.selectAll('.'+cls).data(bins).enter().append('rect').attr('class',cls)
+      .attr('x',d=>xs(d.x0)+offset+1).attr('width',d=>Math.max(0,bw-1))
+      .attr('y',d=>ys(d.length)).attr('height',d=>h-ys(d.length))
+      .on('mousemove',(ev,d)=>showTip(ev,`<strong style="color:${cls==='bar-m'?'var(--men)':'var(--women)'}">${cls==='bar-m'?'Men':'Women'}</strong><br><span>Score: </span><strong>${Math.round(d.x0)}–${Math.round(d.x1)}</strong><br><strong>${d.length}</strong><span> athletes</span>`))
+      .on('mouseleave',hideTip);
+  if(histMode==='overlay'){
+    const bw=Math.max(1,xs(mB[0]?.x1||1)-xs(mB[0]?.x0||0));
+    drawBars(fB,'bar-f',0,bw);drawBars(mB,'bar-m',0,bw);
+  } else {
+    const fw=Math.max(2,xs(mB[0]?.x1||1)-xs(mB[0]?.x0||0));
+    const bw=fw/2-1;
+    drawBars(mB,'bar-m',0,bw);drawBars(fB,'bar-f',bw+1,bw);
+  }
+  if(selA){
+    const x=xs(selA.score);
+    g.append('line').attr('class','hlline').attr('x1',x).attr('x2',x).attr('y1',0).attr('y2',h);
+    g.append('polygon').attr('points',`${x},${h+7} ${x-5},${h+15} ${x+5},${h+15}`).attr('fill','#f5c518');
+    document.getElementById('hlLegH').style.display='flex';
+    document.getElementById('hlLegHName').textContent=selA.name.split(' ')[0];
+  } else { document.getElementById('hlLegH').style.display='none'; }
+}
+
+// ============================================================
+// AGE SCATTER
+// ============================================================
+function drawAge(){
+  const{g,w,h}=cBase('ageSvg',265);
+  const valid=visible.filter(a=>a.age>0);
+  if(!valid.length)return;
+  const xs=d3.scaleLinear().domain([16,68]).range([0,w]);
+  const ys=d3.scaleLinear().domain([0,d3.max(all,a=>a.score)*1.06]).range([h,0]);
+  addGrid(g,ys,w);addAxes(g,xs,ys,h,'AGE','SCORE');
+  g.selectAll('.dot').data(valid).enter().append('circle')
+    .attr('class',d=>d.gender==='M'?'dot-m':'dot-f').attr('cx',d=>xs(d.age)).attr('cy',d=>ys(d.score)).attr('r',3)
+    .on('mousemove',(ev,d)=>showTip(ev,`<strong>${d.name}</strong><br><span>Age: </span><strong>${d.age}</strong><br><span>Score: </span><strong>${d.score.toLocaleString()}</strong>`))
+    .on('mouseleave',hideTip);
+  if(selA&&selA.age>0){
+    g.append('circle').attr('class','dot-hl').attr('cx',xs(selA.age)).attr('cy',ys(selA.score)).attr('r',6)
+      .on('mousemove',ev=>showTip(ev,`<strong style="color:#f5c518">${selA.name}</strong><br><span>Age: </span><strong>${selA.age}</strong><br><span>Score: </span><strong>${selA.score.toLocaleString()}</strong>`))
+      .on('mouseleave',hideTip);
+    document.getElementById('hlLegA').style.display='flex';
+  } else { document.getElementById('hlLegA').style.display='none'; }
+}
+
+// ============================================================
+// HW SCATTER
+// ============================================================
+function setHWMode(m){hwMode=m;document.getElementById('btnH').classList.toggle('active',m==='height');document.getElementById('btnW').classList.toggle('active',m==='weight');drawHW();}
+
+function drawHW(){
+  const{g,w,h}=cBase('hwSvg',240);
+  const fld=hwMode==='height'?'heightCm':'weightKg';
+  const valid=visible.filter(a=>a[fld]>0);
+  if(!valid.length)return;
+  const xExt=d3.extent(all.filter(a=>a[fld]>0),d=>d[fld]);
+  const xs=d3.scaleLinear().domain([xExt[0]-2,xExt[1]+2]).range([0,w]);
+  const ys=d3.scaleLinear().domain([0,d3.max(all,a=>a.score)*1.06]).range([h,0]);
+  addGrid(g,ys,w);addAxes(g,xs,ys,h,hwMode==='height'?'HEIGHT (cm)':'WEIGHT (kg)','SCORE');
+  g.selectAll('.dot').data(valid).enter().append('circle')
+    .attr('class',d=>d.gender==='M'?'dot-m':'dot-f').attr('cx',d=>xs(d[fld])).attr('cy',d=>ys(d.score)).attr('r',3)
+    .on('mousemove',(ev,d)=>{const v=hwMode==='height'?d.heightDisplay:d.weightDisplay;showTip(ev,`<strong>${d.name}</strong><br><span>${hwMode==='height'?'Height':'Weight'}: </span><strong>${v}</strong><br><span>Score: </span><strong>${d.score.toLocaleString()}</strong>`);})
+    .on('mouseleave',hideTip);
+  if(selA&&selA[fld]>0){
+    g.append('circle').attr('class','dot-hl').attr('cx',xs(selA[fld])).attr('cy',ys(selA.score)).attr('r',6)
+      .on('mousemove',ev=>{const v=hwMode==='height'?selA.heightDisplay:selA.weightDisplay;showTip(ev,`<strong style="color:#f5c518">${selA.name}</strong><br><strong>${v}</strong> → <strong>${selA.score.toLocaleString()}</strong>`)})
+      .on('mouseleave',hideTip);
+    document.getElementById('hlLegHW').style.display='flex';
+  } else { document.getElementById('hlLegHW').style.display='none'; }
+}
+
+// ============================================================
+// TABLE
+// ============================================================
+function applyTblSort(){
+  const m={rank:'rank',name:'name',gender:'gender',age:'age',height:'heightCm',weight:'weightKg',score:'score'};
+  const f=m[sortKey]||'rank';
+  tbl.sort((a,b)=>{let av=a[f],bv=b[f];if(typeof av==='string'){av=av.toLowerCase();bv=bv.toLowerCase();}return sortDir==='asc'?(av<bv?-1:av>bv?1:0):(av>bv?-1:av<bv?1:0);});
+  ['rank','name','gender','age','height','weight','score'].forEach(k=>{
+    const th=document.getElementById(`th-${k}`);if(!th)return;
+    const sa=th.querySelector('.sa');
+    if(k===sortKey){sa.textContent=sortDir==='asc'?'↑':'↓';th.classList.add('sorted');}
+    else{sa.textContent='↕';th.classList.remove('sorted');}
+  });
+}
+
+function clickSort(k){
+  if(sortKey===k){sortDir=sortDir==='asc'?'desc':'asc';document.getElementById('tblSortD').value=sortDir;}
+  else{sortKey=k;document.getElementById('tblSortF').value=k;sortDir='asc';}
+  applyTblSort();renderTbl();
+}
+
+function renderTbl(){
+  const tbody=document.getElementById('tblBody');tbody.innerHTML='';
+  const tot=tbl.length,totPg=Math.ceil(tot/PAGE_SIZE);
+  const st=(page-1)*PAGE_SIZE,en=Math.min(st+PAGE_SIZE,tot);
+  const rows=tbl.slice(st,en);
+  const mx=Math.max(...tbl.map(a=>a.score),1);
+  if(!rows.length){tbody.innerHTML=`<tr><td colspan="8" class="empty">No athletes match current filters</td></tr>`;}
+  else{
+    rows.forEach(a=>{
+      const hl=selA&&a.name===selA.name;
+      const bw=Math.round((a.score/mx)*68);
+      const tr=document.createElement('tr');
+      if(hl)tr.classList.add('hlrow');
+      tr.innerHTML=`<td class="rk${a.rank<=3?' top':''}${hl?' hl':''}">#${a.rank}</td><td><div class="aname">${a.name}</div><div style="font-size:.7rem;color:var(--muted)">${a.country}</div></td><td><span class="bdg ${a.gender}">${a.gender==='M'?'MEN':'WOMEN'}</span></td><td>${a.age||'—'}</td><td>${a.heightDisplay}</td><td>${a.weightDisplay}</td><td><div class="sbw"><div class="sb${hl?' hl':''}" style="width:${bw}px"></div><span>${a.score.toLocaleString()}</span></div></td><td style="color:var(--muted);font-size:.76rem">${a.affiliate}</td>`;
+      tbody.appendChild(tr);
+    });
+  }
+  document.getElementById('pgInfo').textContent=`${st+1}–${en} of ${tot.toLocaleString()}`;
+  const pb=document.getElementById('pgBtns');pb.innerHTML='';
+  const mkB=(lbl,pg,cls='')=>{const b=document.createElement('button');b.className=`pb-btn ${cls}`;b.textContent=lbl;b.disabled=pg<1||pg>totPg;b.onclick=()=>{page=pg;renderTbl();};return b;};
+  pb.appendChild(mkB('‹',page-1));
+  const ps=new Set([1,totPg,page-1,page,page+1]);
+  [...ps].filter(p=>p>=1&&p<=totPg).sort((a,b)=>a-b).forEach((p,i,arr)=>{
+    if(i>0&&arr[i-1]<p-1){const sp=document.createElement('span');sp.textContent='…';sp.style.cssText='color:var(--muted);padding:0 4px;';pb.appendChild(sp);}
+    pb.appendChild(mkB(p,p,p===page?'cur':''));
+  });
+  pb.appendChild(mkB('›',page+1));
+}
+
+// ============================================================
+// ATHLETE LOOKUP
+// ============================================================
+let acIdx=-1;
+
+document.getElementById('lkIn').addEventListener('input',function(){
+  const q=this.value.trim().toLowerCase();
+  document.getElementById('lkClr').classList.toggle('vis',q.length>0);
+  if(q.length<2){closeAC();return;}
+  showAC(all.filter(a=>a.name.toLowerCase().includes(q)).slice(0,8));
+});
+document.getElementById('lkIn').addEventListener('keydown',function(e){
+  const items=document.querySelectorAll('.ac-item');
+  if(e.key==='ArrowDown'){acIdx=Math.min(acIdx+1,items.length-1);hlAC(items);}
+  else if(e.key==='ArrowUp'){acIdx=Math.max(acIdx-1,0);hlAC(items);}
+  else if(e.key==='Enter'){if(acIdx>=0&&items[acIdx])items[acIdx].click();else if(items.length)items[0].click();}
+  else if(e.key==='Escape')closeAC();
+});
+document.getElementById('lkClr').addEventListener('click',clearSel);
+document.addEventListener('click',e=>{if(!e.target.closest('.lk-wrap'))closeAC();});
+
+function showAC(matches){
+  const list=document.getElementById('acList');list.innerHTML='';acIdx=-1;
+  if(!matches.length){list.classList.remove('open');return;}
+  matches.forEach(a=>{
+    const div=document.createElement('div');div.className='ac-item';
+    div.innerHTML=`<div class="ac-name">${a.name}</div><div class="ac-meta">${a.gender==='M'?'Men':'Women'} · Rank #${a.rank} · Score: ${a.score.toLocaleString()}</div>`;
+    div.addEventListener('click',()=>selAthlete(a));
+    list.appendChild(div);
+  });
+  list.classList.add('open');
+}
+function hlAC(items){items.forEach((el,i)=>el.classList.toggle('act',i===acIdx));if(items[acIdx])items[acIdx].scrollIntoView({block:'nearest'});}
+function closeAC(){document.getElementById('acList').classList.remove('open');acIdx=-1;}
+
+function selAthlete(a){
+  selA=a;
+  document.getElementById('lkIn').value=a.name;
+  document.getElementById('lkClr').classList.add('vis');
+  closeAC();
+  document.getElementById('sacName').textContent=a.name;
+  document.getElementById('sacStats').innerHTML=`<strong>Overall Rank:</strong> #${a.rank}<br><strong>Score:</strong> ${a.score.toLocaleString()} reps<br><strong>Gender:</strong> ${a.gender==='M'?'Men':'Women'}<br><strong>Age:</strong> ${a.age||'—'}<br><strong>Height:</strong> ${a.heightDisplay}<br><strong>Weight:</strong> ${a.weightDisplay}<br><strong>Affiliate:</strong> ${a.affiliate}`;
+  document.getElementById('sacCard').classList.add('vis');
+  redraw();
+  const idx=tbl.findIndex(t=>t.name===a.name);
+  if(idx>=0){page=Math.floor(idx/PAGE_SIZE)+1;renderTbl();setTimeout(()=>{const hl=document.querySelector('tbody tr.hlrow');if(hl)hl.scrollIntoView({behavior:'smooth',block:'center'});},100);}
+}
+
+function clearSel(){
+  selA=null;
+  document.getElementById('lkIn').value='';
+  document.getElementById('lkClr').classList.remove('vis');
+  document.getElementById('sacCard').classList.remove('vis');
+  closeAC();
+  redraw();
+}
+
+// ============================================================
+// REDRAW
+// ============================================================
+function redraw(){drawHist();drawAge();drawHW();renderTbl();}
+
+// ============================================================
+// STATUS / LOADING
+// ============================================================
+function setStatus(t,tx){const d=document.getElementById('sdot');d.className='sdot';if(t==='loading')d.classList.add('loading');else if(t==='error')d.classList.add('error');document.getElementById('stxt').textContent=tx;}
+function setLoad(on,tx=''){document.getElementById('lov').classList.toggle('on',on);if(tx)document.getElementById('ltxt').textContent=tx;}
+
+// ============================================================
+// INIT
+// ============================================================
+function init(){
+  bindSlider('age','ageMin','ageMax','ageMin','ageMax',v=>v,18,65);
+  bindSlider('ht','htMin','htMax','htMin','htMax',cmFtIn,142,213);
+  bindSlider('wt','wtMin','wtMax','wtMin','wtMax',v=>kgLbs(v)+' lbs',40,130);
+  bindSlider('sc','scMin','scMax','scMin','scMax',v=>v,0,999);
+  updAllRUI();
+  document.getElementById('yrSel').addEventListener('change',()=>loadData(document.getElementById('yrSel').value,document.getElementById('scSel').value));
+  document.getElementById('scSel').addEventListener('change',()=>loadData(document.getElementById('yrSel').value,document.getElementById('scSel').value));
+  window.addEventListener('resize',redraw);
+  loadData('2025','0');
+}
+init();
+</script>
+</body>
+</html>
